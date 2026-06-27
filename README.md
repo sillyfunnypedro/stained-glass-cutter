@@ -98,6 +98,13 @@ npm run preview  # serve the production build locally
 Pushing to `main` auto-deploys to GitHub Pages via the workflow in
 `.github/workflows/deploy.yml`.
 
+## Project status
+
+This is a **one-off project, provided as-is** for people to use or not. I'm
+**not accepting pull requests, feature requests, or bug reports**, and issues
+are disabled — the code is not actively maintained. Since it's released under
+CC0, you're welcome to copy it and adapt it for your own needs.
+
 ## License
 
 Released under [**CC0 1.0 Universal**](./LICENSE) (public domain dedication).
