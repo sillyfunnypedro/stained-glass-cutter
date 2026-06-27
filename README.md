@@ -49,6 +49,43 @@ The output is a transparent PNG, so it composites cleanly over any background.
 `src/worker.ts` runs this in a Web Worker so the UI stays responsive, and
 `src/App.tsx` handles upload, the live preview, the sliders, and saving.
 
+## Python command-line tools
+
+The browser app is a port of the original Python pipeline, which lives in
+[`python/`](./python) and is handy for batch processing on a desktop. Both
+scripts process every image in their folder (or specific files you name) and
+write the results next to each input.
+
+```bash
+cd python
+pip install -r requirements.txt
+```
+
+**`convert_templates.py`** — white-on-black line images with a uniform line
+width. Reduces every stroke to its centerline, then redraws at a fixed width.
+
+```bash
+python3 convert_templates.py                 # all images in the folder
+python3 convert_templates.py drawing.jpg     # a specific file
+python3 convert_templates.py --width 3 drawing.jpg
+# -> writes <name>_bw.png
+```
+
+**`vectorize_templates.py`** — smooth **SVG** cut files for a Cricut. Traces the
+lines into Bezier curves; the enclosed cells are filled so you get a clean
+vector to cut, weed, or print.
+
+```bash
+python3 vectorize_templates.py               # all images in the folder
+python3 vectorize_templates.py --line-width 20 --smooth 3 drawing.jpg
+# -> writes <name>_cut.svg (+ <name>_cut_preview.png)
+```
+
+Run either with `-h` to see all options (threshold, smoothing, spur cleanup, etc.).
+
+> Note: image files are intentionally git-ignored, so your inputs and the
+> generated outputs stay on your machine and are never published.
+
 ## Develop / build
 
 ```bash

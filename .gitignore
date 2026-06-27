@@ -2,3 +2,18 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# Never publish images in this repo. Users' uploaded/source drawings and any
+# generated output images stay local and must not be committed.
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.svg
+*.ico
+*.heic
+*.heif
