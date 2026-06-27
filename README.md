@@ -1,32 +1,41 @@
 # Stained Glass Cutter
 
-A 100% client-side React + TypeScript app. Upload a line drawing; it produces an
-image where the enclosed "glass piece" cells are filled solid black and the lines
-between them (plus the surrounding area) are transparent. Tune it with sliders and
-save the result to your photos.
+**Turn a line drawing into a clean, cut-ready image — right in your browser.**
 
-No server, no upload — all image processing runs in your browser (in a Web Worker).
+👉 **Live app: https://sillyfunnypedro.github.io/stained-glass-cutter/**
 
-## Run
+## What it's for
 
-```bash
-npm install
-npm run dev      # http://localhost:5173
-```
+If you have a stained-glass-style pattern or any line drawing (a photo of a
+sketch, an exported template, etc.), this app converts it into an image where:
 
-## Build
+- the **enclosed cells** — the individual "glass pieces" — are filled **solid black**, and
+- the **lines between the pieces** and the **area outside the design** are **transparent**.
 
-```bash
-npm run build    # type-checks, then bundles to dist/
-npm run preview  # serve the production build locally
-```
+That makes it easy to drop into a cutting workflow (e.g. a Cricut) or to use as a
+clean stencil/silhouette. When you like the result, save it straight to your
+photos.
 
-The build is static (`dist/`) and can be hosted on any static host (Netlify,
-GitHub Pages, etc.). Asset paths are relative, so it also works from a subfolder.
+Everything runs **100% in your browser** — your image is never uploaded to a
+server.
+
+## How to use it
+
+1. Open the [app](https://sillyfunnypedro.github.io/stained-glass-cutter/).
+2. Tap to choose a photo (or drag an image in).
+3. Adjust the sliders until it looks right:
+   - **Line thickness** — width of the transparent gap between pieces.
+   - **Detection sensitivity** — how dark a pixel must be to count as a line.
+   - **Smoothing** — rounds off jagged edges.
+   - **Spur cleanup** — trims stray little stubs at line junctions.
+4. Press **Save to Photos**. On a phone this opens the share sheet with
+   *Save Image* (saves straight to Photos); on desktop it downloads a PNG.
+
+The output is a transparent PNG, so it composites cleanly over any background.
 
 ## How it works
 
-`src/processing.ts` is a TypeScript port of the original Python pipeline:
+`src/processing.ts` is a TypeScript image pipeline:
 
 1. **Line mask** — pixels darker than the threshold are treated as lines.
 2. **Despeckle** — drop tiny noise blobs.
@@ -35,20 +44,31 @@ GitHub Pages, etc.). Asset paths are relative, so it also works from a subfolder
 5. **Dilate** — regrow lines to a uniform width.
 6. **Gaussian smooth** — round off the pixel staircase.
 7. **Flood fill from the border** — separate the outside from the enclosed
-   cells; fill the cells black, leave everything else transparent.
+   cells, then fill the cells black and leave everything else transparent.
 
-`src/worker.ts` runs this off the main thread. `src/App.tsx` handles upload,
-the live preview (on a transparency checkerboard), the sliders, and saving.
+`src/worker.ts` runs this in a Web Worker so the UI stays responsive, and
+`src/App.tsx` handles upload, the live preview, the sliders, and saving.
 
-## Saving to Photos
+## Develop / build
 
-The Save button uses the Web Share API when available (on iOS/Android this
-offers **Save Image** straight to Photos). On desktop it falls back to a normal
-PNG download.
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # type-checks, then bundles to dist/
+npm run preview  # serve the production build locally
+```
+
+Pushing to `main` auto-deploys to GitHub Pages via the workflow in
+`.github/workflows/deploy.yml`.
+
+## License
+
+Released under [**CC0 1.0 Universal**](./LICENSE) (public domain dedication).
+Do whatever you like with it — no permission needed. **Attribution is
+appreciated if you feel like it, but not required.**
 
 ## Notes
 
 - Large uploads are downscaled to ~1400px on the long edge before processing so
   slider tweaks re-render in about a second.
 - EXIF orientation is respected on import.
-- Sliders: line thickness, detection sensitivity, smoothing, and spur cleanup.
