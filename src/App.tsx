@@ -205,6 +205,21 @@ export default function App() {
           </div>
 
           <div className="controls">
+            <div className="modes" role="group" aria-label="Output style">
+              <button
+                className={params.mode === "cells" ? "active" : ""}
+                onClick={() => setParams((p) => ({ ...p, mode: "cells" }))}
+              >
+                Glass pieces
+              </button>
+              <button
+                className={params.mode === "lines" ? "active" : ""}
+                onClick={() => setParams((p) => ({ ...p, mode: "lines" }))}
+              >
+                Line drawing
+              </button>
+            </div>
+
             {sliders.map((s) => (
               <div className="control" key={s.key}>
                 <label>

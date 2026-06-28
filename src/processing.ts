@@ -9,7 +9,16 @@
 // -> dilate to uniform width -> gaussian smooth -> flood-fill from the border
 // to separate the outside from the enclosed cells.
 
+/**
+ * Output style:
+ *  - "cells": enclosed glass-piece regions filled black, lines transparent.
+ *  - "lines": the smoothed skeleton drawn as black lines on transparent.
+ */
+export type Mode = "cells" | "lines";
+
 export interface Params {
+  /** Output style. */
+  mode: Mode;
   /** Background brightness cutoff 0-255. Pixels darker than this are "line". */
   bgThresh: number;
   /** Uniform line width in pixels (the transparent gap between cells). */
@@ -23,6 +32,7 @@ export interface Params {
 }
 
 export const DEFAULT_PARAMS: Params = {
+  mode: "cells",
   bgThresh: 230,
   lineWidth: 8,
   smoothSigma: 2,
@@ -299,6 +309,19 @@ export function process(
 
   const thick = dilateDisk(skel, w, h, params.lineWidth);
   const smoothed = gaussianBlur(thick, w, h, params.smoothSigma);
+
+  // Line-drawing mode: draw the smoothed skeleton as black lines on a
+  // transparent background. The blurred mask doubles as an anti-aliased alpha.
+  if (params.mode === "lines") {
+    const out = new Uint8ClampedArray(n * 4);
+    for (let i = 0; i < n; i++) {
+      let v = smoothed[i];
+      if (v <= 0) continue;
+      if (v > 1) v = 1;
+      out[i * 4 + 3] = Math.round(v * 255); // RGB already 0 (black)
+    }
+    return out;
+  }
 
   const lineBin = new Uint8Array(n);
   for (let i = 0; i < n; i++) lineBin[i] = smoothed[i] > 0.5 ? 1 : 0;

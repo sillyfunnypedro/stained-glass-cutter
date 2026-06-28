@@ -7,10 +7,14 @@
 ## What it's for
 
 If you have a stained-glass-style pattern or any line drawing (a photo of a
-sketch, an exported template, etc.), this app converts it into an image where:
+sketch, an exported template, etc.), this app converts it into a clean image in
+one of two styles:
 
-- the **enclosed cells** — the individual "glass pieces" — are filled **solid black**, and
-- the **lines between the pieces** and the **area outside the design** are **transparent**.
+- **Glass pieces** — the enclosed cells (the individual "glass pieces") are
+  filled **solid black**, while the lines between them and the area outside the
+  design are **transparent**.
+- **Line drawing** — the smoothed centerlines are drawn as **black lines** on a
+  **transparent** background.
 
 That makes it easy to drop into a cutting workflow (e.g. a Cricut) or to use as a
 clean stencil/silhouette. When you like the result, save it straight to your
@@ -23,7 +27,12 @@ server.
 
 1. Open the [app](https://sillyfunnypedro.github.io/stained-glass-cutter/).
 2. Tap to choose a photo (or drag an image in).
-3. Adjust the sliders until it looks right:
+3. Pick an output style:
+   - **Glass pieces** — the enclosed cells are filled solid black; the lines
+     between them and the outside are transparent.
+   - **Line drawing** — the smoothed centerlines are drawn as black lines on a
+     transparent background.
+4. Adjust the sliders until it looks right:
    - **Line thickness** — width of the transparent gap between pieces.
    - **Detection sensitivity** — how dark a pixel must be to count as a line.
    - **Smoothing** — rounds off jagged edges.
