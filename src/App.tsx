@@ -274,6 +274,10 @@ export default function App() {
       )}
 
       {error && <p className="error">{error}</p>}
+
+      <footer className="build">
+        build {__BUILD_ID__} · {__BUILD_TIME__} UTC
+      </footer>
     </div>
   );
 }

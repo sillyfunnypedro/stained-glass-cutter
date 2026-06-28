@@ -160,6 +160,15 @@ button.primary {
 }
 .link-btn { display: block; }
 
+.build {
+  margin-top: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 .error {
   margin-top: 16px;
   color: #ff8080;
