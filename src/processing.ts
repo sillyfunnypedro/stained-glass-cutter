@@ -40,8 +40,10 @@ export const DEFAULT_PARAMS: Params = {
   minBlob: 20,
 };
 
-/** Longest side the pipeline runs at. Large uploads are downscaled to this. */
-export const MAX_PROCESS_DIM = 1400;
+/** Longest side the pipeline runs at, per quality setting. Higher resolution
+ *  keeps the gaps the same pixel width but samples their edges finer, so they
+ *  come out thinner and cleaner — at the cost of slower processing. */
+export const PROCESS_DIM = { standard: 1400, high: 2800 } as const;
 
 // --------------------------------------------------------------------------- //
 // 1. Line mask: a pixel is "line" if its darkest channel is below threshold.

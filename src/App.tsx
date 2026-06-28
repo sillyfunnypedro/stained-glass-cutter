@@ -9,15 +9,15 @@ import {
 } from "react";
 import {
   DEFAULT_PARAMS,
-  MAX_PROCESS_DIM,
+  PROCESS_DIM,
   type Params,
 } from "./processing";
 import type { PngRequest, SvgRequest, SvgVariant, WorkerResponse } from "./worker";
 
-/** Decode a File, fix EXIF orientation, downscale, and return its pixels. */
-async function fileToImageData(file: File): Promise<ImageData> {
+/** Decode a File, fix EXIF orientation, downscale to maxDim, and return pixels. */
+async function fileToImageData(file: File, maxDim: number): Promise<ImageData> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-  const scale = Math.min(1, MAX_PROCESS_DIM / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
@@ -36,7 +36,11 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [highRes, setHighRes] = useState(false);
 
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const fileRef = useRef<File | null>(null);
   const sourceRef = useRef<ImageData | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -131,27 +135,47 @@ export default function App() {
     return () => clearTimeout(t);
   }, [params, run]);
 
-  const loadFile = useCallback(
-    async (file: File) => {
+  // Decode the stored file at the chosen resolution and kick off processing.
+  const decodeAndRun = useCallback(
+    async (file: File, hi: boolean) => {
       setError(null);
-      if (!file.type.startsWith("image/")) {
-        setError("Please choose an image file.");
-        return;
-      }
       try {
         setBusy(true);
-        const imageData = await fileToImageData(file);
+        const maxDim = hi ? PROCESS_DIM.high : PROCESS_DIM.standard;
+        const imageData = await fileToImageData(file, maxDim);
         sourceRef.current = imageData;
-        setFileName(file.name);
-        run(imageData, params);
+        run(imageData, paramsRef.current);
       } catch (err) {
         console.error(err);
         setError("Could not read that image.");
         setBusy(false);
       }
     },
-    [params, run],
+    [run],
   );
+
+  const loadFile = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        setError("Please choose an image file.");
+        return;
+      }
+      fileRef.current = file;
+      setFileName(file.name);
+      await decodeAndRun(file, highRes);
+    },
+    [decodeAndRun, highRes],
+  );
+
+  // Re-decode at the new resolution when the High-res toggle flips.
+  const didMountRes = useRef(false);
+  useEffect(() => {
+    if (!didMountRes.current) {
+      didMountRes.current = true;
+      return;
+    }
+    if (fileRef.current) void decodeAndRun(fileRef.current, highRes);
+  }, [highRes, decodeAndRun]);
 
   const onFileInput = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -316,6 +340,19 @@ export default function App() {
                 />
               </div>
             ))}
+
+            <label className="reso">
+              <input
+                type="checkbox"
+                checked={highRes}
+                onChange={(e) => setHighRes(e.target.checked)}
+                disabled={busy}
+              />
+              <span>
+                High resolution
+                <small>cleaner, thinner gaps · slower</small>
+              </span>
+            </label>
 
             <div className="buttons">
               <button className="primary" onClick={savePng} disabled={!hasResult || busy}>
