@@ -130,33 +130,55 @@ export default function App() {
     const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
     if (!blob) return;
     const base = (fileName?.replace(/\.[^.]+$/, "") || "stained-glass") + "-cut.png";
-    const file = new File([blob], base, { type: "image/png" });
 
-    // On phones this offers "Save Image" straight to Photos; desktop falls back
-    // to a normal download.
+    const download = () => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = base;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    // The native share sheet ("Save Image" to Photos) is only reliable on
+    // touch/mobile devices. On desktop — notably Chrome on macOS — sharing
+    // files can crash the tab, and a plain download is what's expected anyway.
+    const isMobile =
+      typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
     const nav = navigator as Navigator & {
       canShare?: (d: ShareData) => boolean;
     };
-    if (nav.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: "Stained glass cut" });
-        return;
-      } catch (err) {
-        if ((err as DOMException)?.name === "AbortError") return;
+    if (isMobile && nav.canShare) {
+      const file = new File([blob], base, { type: "image/png" });
+      if (nav.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "Stained glass cut" });
+          return;
+        } catch (err) {
+          if ((err as DOMException)?.name === "AbortError") return;
+          // otherwise fall through to a normal download
+        }
       }
     }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = base;
-    a.click();
-    URL.revokeObjectURL(url);
+    download();
   }, [fileName]);
 
   const set = <K extends keyof Params>(key: K) => (e: ChangeEvent<HTMLInputElement>) =>
     setParams((p) => ({ ...p, [key]: Number(e.target.value) }));
 
   const reset = () => setParams(DEFAULT_PARAMS);
+
+  // On touch devices the save uses the share sheet ("Save Image" to Photos);
+  // on desktop it downloads a PNG. Label the button to match.
+  const saveLabel = useMemo(
+    () =>
+      typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches
+        ? "Save to Photos"
+        : "Download PNG",
+    [],
+  );
 
   const sliders = useMemo(
     () => [
@@ -239,7 +261,7 @@ export default function App() {
 
             <div className="buttons">
               <button className="primary" onClick={save} disabled={!hasResult || busy}>
-                Save to Photos
+                {saveLabel}
               </button>
               <button onClick={reset} disabled={busy}>Reset</button>
               <label className="link-btn">
