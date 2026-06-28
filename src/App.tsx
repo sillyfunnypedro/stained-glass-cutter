@@ -12,7 +12,7 @@ import {
   MAX_PROCESS_DIM,
   type Params,
 } from "./processing";
-import type { WorkerRequest, WorkerResponse } from "./worker";
+import type { PngRequest, SvgRequest, SvgVariant, WorkerResponse } from "./worker";
 
 /** Decode a File, fix EXIF orientation, downscale, and return its pixels. */
 async function fileToImageData(file: File): Promise<ImageData> {
@@ -40,7 +40,9 @@ export default function App() {
   const sourceRef = useRef<ImageData | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
-  const reqIdRef = useRef(0);
+  const reqIdRef = useRef(0); // latest live-preview (png) request
+  const svgIdRef = useRef(0);
+  const svgPending = useRef(new Map<number, (svg: string) => void>());
 
   // Spin up the processing worker once.
   useEffect(() => {
@@ -48,15 +50,27 @@ export default function App() {
       type: "module",
     });
     worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
-      const { id, buffer, width, height } = e.data;
-      if (id !== reqIdRef.current) return; // a newer request superseded this one
+      const msg = e.data;
+      if (msg.kind === "svg") {
+        const resolve = svgPending.current.get(msg.id);
+        if (resolve) {
+          svgPending.current.delete(msg.id);
+          resolve(msg.svg);
+        }
+        return;
+      }
+      if (msg.id !== reqIdRef.current) return; // a newer request superseded this one
       const canvas = canvasRef.current;
       if (canvas) {
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = msg.width;
+        canvas.height = msg.height;
         const ctx = canvas.getContext("2d")!;
-        ctx.clearRect(0, 0, width, height);
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0);
+        ctx.clearRect(0, 0, msg.width, msg.height);
+        ctx.putImageData(
+          new ImageData(new Uint8ClampedArray(msg.buffer), msg.width, msg.height),
+          0,
+          0,
+        );
       }
       setHasResult(true);
       setBusy(false);
@@ -72,7 +86,8 @@ export default function App() {
     const id = ++reqIdRef.current;
     // Copy the buffer so the source survives transfer (we reprocess on every tweak).
     const copy = src.data.slice();
-    const req: WorkerRequest = {
+    const req: PngRequest = {
+      kind: "png",
       id,
       buffer: copy.buffer,
       width: src.width,
@@ -81,6 +96,33 @@ export default function App() {
     };
     worker.postMessage(req, [copy.buffer]);
   }, []);
+
+  // Ask the worker to vectorize the current image into an SVG string.
+  const requestSvg = useCallback(
+    (variant: SvgVariant) =>
+      new Promise<string>((resolve, reject) => {
+        const worker = workerRef.current;
+        const src = sourceRef.current;
+        if (!worker || !src) {
+          reject(new Error("no image"));
+          return;
+        }
+        const id = ++svgIdRef.current;
+        svgPending.current.set(id, resolve);
+        const copy = src.data.slice();
+        const req: SvgRequest = {
+          kind: "svg",
+          variant,
+          id,
+          buffer: copy.buffer,
+          width: src.width,
+          height: src.height,
+          params,
+        };
+        worker.postMessage(req, [copy.buffer]);
+      }),
+    [params],
+  );
 
   // Debounced reprocess whenever params change (and we have an image).
   useEffect(() => {
@@ -124,61 +166,77 @@ export default function App() {
     if (file) void loadFile(file);
   };
 
-  const save = useCallback(async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
-    if (!blob) return;
-    const base = (fileName?.replace(/\.[^.]+$/, "") || "stained-glass") + "-cut.png";
+  const baseName = useMemo(
+    () => fileName?.replace(/\.[^.]+$/, "") || "stained-glass",
+    [fileName],
+  );
 
-    const download = () => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = base;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    };
-
-    // The native share sheet ("Save Image" to Photos) is only reliable on
-    // touch/mobile devices. On desktop — notably Chrome on macOS — sharing
-    // files can crash the tab, and a plain download is what's expected anyway.
+  // Hand a file to the OS: on touch devices the share sheet (Mail, Save to
+  // Files, Cricut, Photos for PNG); on desktop a plain download. Desktop Chrome
+  // on macOS can crash when sharing files, so share is gated to touch devices.
+  const deliver = useCallback(async (blob: Blob, filename: string) => {
     const isMobile =
       typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
-    const nav = navigator as Navigator & {
-      canShare?: (d: ShareData) => boolean;
-    };
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (isMobile && nav.canShare) {
-      const file = new File([blob], base, { type: "image/png" });
+      const file = new File([blob], filename, { type: blob.type });
       if (nav.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: "Stained glass cut" });
+          await navigator.share({ files: [file], title: filename });
           return;
         } catch (err) {
           if ((err as DOMException)?.name === "AbortError") return;
-          // otherwise fall through to a normal download
+          // otherwise fall through to a download
         }
       }
     }
-    download();
-  }, [fileName]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, []);
+
+  const savePng = useCallback(async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    if (blob) await deliver(blob, `${baseName}.png`);
+  }, [deliver, baseName]);
+
+  const [svgBusy, setSvgBusy] = useState(false);
+  const saveSvg = useCallback(
+    async (variant: SvgVariant) => {
+      setSvgBusy(true);
+      try {
+        const svg = await requestSvg(variant);
+        const suffix =
+          variant === "cells" ? "pieces" : variant === "lines-outline" ? "lines-outline" : "lines";
+        const blob = new Blob([svg], { type: "image/svg+xml" });
+        await deliver(blob, `${baseName}-${suffix}.svg`);
+      } catch {
+        setError("Could not create the SVG.");
+      } finally {
+        setSvgBusy(false);
+      }
+    },
+    [requestSvg, deliver, baseName],
+  );
 
   const set = <K extends keyof Params>(key: K) => (e: ChangeEvent<HTMLInputElement>) =>
     setParams((p) => ({ ...p, [key]: Number(e.target.value) }));
 
   const reset = () => setParams(DEFAULT_PARAMS);
 
-  // On touch devices the save uses the share sheet ("Save Image" to Photos);
-  // on desktop it downloads a PNG. Label the button to match.
-  const saveLabel = useMemo(
-    () =>
-      typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches
-        ? "Save to Photos"
-        : "Download PNG",
+  // On touch devices saving uses the share sheet; on desktop it downloads.
+  const isMobile = useMemo(
+    () => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches,
     [],
   );
+  const pngLabel = isMobile ? "Save / Email PNG" : "Download PNG";
 
   const sliders = useMemo(
     () => [
@@ -260,9 +318,39 @@ export default function App() {
             ))}
 
             <div className="buttons">
-              <button className="primary" onClick={save} disabled={!hasResult || busy}>
-                {saveLabel}
+              <button className="primary" onClick={savePng} disabled={!hasResult || busy}>
+                {pngLabel}
               </button>
+
+              {params.mode === "cells" ? (
+                <button onClick={() => saveSvg("cells")} disabled={!hasResult || busy || svgBusy}>
+                  {svgBusy ? "Working…" : "Save SVG (for Cricut)"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => saveSvg("lines-centerline")}
+                    disabled={!hasResult || busy || svgBusy}
+                  >
+                    {svgBusy ? "Working…" : "SVG · single line"}
+                  </button>
+                  <button
+                    onClick={() => saveSvg("lines-outline")}
+                    disabled={!hasResult || busy || svgBusy}
+                  >
+                    {svgBusy ? "Working…" : "SVG · outlined lines"}
+                  </button>
+                </>
+              )}
+
+              {isMobile && (
+                <p className="hint">
+                  Saving opens the share sheet — pick <strong>Mail</strong> to email it to
+                  yourself, <strong>Save to Files</strong>, or send to Cricut. (SVGs can’t go
+                  to the camera roll.)
+                </p>
+              )}
+
               <button onClick={reset} disabled={busy}>Reset</button>
               <label className="link-btn">
                 New photo

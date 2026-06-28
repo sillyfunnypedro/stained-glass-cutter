@@ -160,6 +160,14 @@ button.primary {
 }
 .link-btn { display: block; }
 
+.hint {
+  margin: 2px 0 6px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.hint strong { color: var(--text); font-weight: 600; }
+
 .build {
   margin-top: 24px;
   text-align: center;

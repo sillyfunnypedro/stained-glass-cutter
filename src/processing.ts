@@ -207,7 +207,7 @@ function dilateDisk(img: Uint8Array, w: number, h: number, lineWidth: number): U
 // --------------------------------------------------------------------------- //
 // 6. Separable Gaussian blur of a 0/1 mask -> Float32 field in [0,1].
 // --------------------------------------------------------------------------- //
-function gaussianBlur(mask: Uint8Array | Float32Array, w: number, h: number, sigma: number): Float32Array {
+export function gaussianBlur(mask: Uint8Array | Float32Array, w: number, h: number, sigma: number): Float32Array {
   const src = Float32Array.from(mask);
   if (sigma <= 0) return src;
   const radius = Math.max(1, Math.ceil(sigma * 3));
@@ -289,6 +289,51 @@ function interiorCells(lineBin: Uint8Array, w: number, h: number): Uint8Array {
   const interior = new Uint8Array(n);
   for (let i = 0; i < n; i++) interior[i] = !lineBin[i] && !surrounding[i] ? 1 : 0;
   return interior;
+}
+
+// --------------------------------------------------------------------------- //
+// Intermediate masks, shared by the RGBA renderer and the SVG exporter.
+// --------------------------------------------------------------------------- //
+export interface Masks {
+  w: number;
+  h: number;
+  /** Pruned 1px skeleton (centerlines). */
+  skeleton: Uint8Array;
+  /** Enclosed glass-piece cells. */
+  interior: Uint8Array;
+  /** Solid line region at the requested width (matches line-mode display). */
+  lineCore: Uint8Array;
+}
+
+export function computeMasks(
+  data: Uint8ClampedArray,
+  w: number,
+  h: number,
+  params: Params,
+): Masks {
+  const n = w * h;
+  const mask = lineMask(data, n, params.bgThresh);
+  despeckle(mask, w, h, params.minBlob);
+
+  const skeleton = skeletonize(mask, w, h);
+  pruneSpurs(skeleton, w, h, params.pruneLen);
+
+  const thick = dilateDisk(skeleton, w, h, params.lineWidth);
+  const smoothed = gaussianBlur(thick, w, h, params.smoothSigma);
+
+  const lineBin = new Uint8Array(n);
+  for (let i = 0; i < n; i++) lineBin[i] = smoothed[i] > 0.5 ? 1 : 0;
+  const interior = interiorCells(lineBin, w, h);
+
+  let lineCore = thick;
+  if (params.lineWidth >= 3 && params.smoothSigma > 0) {
+    const effSigma = Math.min(params.smoothSigma, 0.6 * params.lineWidth);
+    const sm = gaussianBlur(thick, w, h, effSigma);
+    lineCore = new Uint8Array(n);
+    for (let i = 0; i < n; i++) lineCore[i] = sm[i] > 0.5 ? 1 : 0;
+  }
+
+  return { w, h, skeleton, interior, lineCore };
 }
 
 // --------------------------------------------------------------------------- //

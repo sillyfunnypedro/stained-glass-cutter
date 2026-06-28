@@ -37,10 +37,17 @@ server.
    - **Detection sensitivity** — how dark a pixel must be to count as a line.
    - **Smoothing** — rounds off jagged edges.
    - **Spur cleanup** — trims stray little stubs at line junctions.
-4. Press **Save to Photos**. On a phone this opens the share sheet with
-   *Save Image* (saves straight to Photos); on desktop it downloads a PNG.
+5. Save it:
+   - **PNG** — a transparent raster image. On a phone the share sheet lets you
+     *Save Image* to Photos, **Mail** it to yourself, or save to Files; on
+     desktop it downloads.
+   - **SVG** — a vector file for Cricut (cleaner cuts than a traced PNG). In
+     *Glass pieces* mode you get filled shapes; in *Line drawing* mode you can
+     export either a **single-line** path (great for Cricut Draw/pen) or
+     **outlined lines**. SVGs can't go to the camera roll, so use Mail / Save to
+     Files / send to Cricut from the share sheet.
 
-The output is a transparent PNG, so it composites cleanly over any background.
+The PNG output is transparent, so it composites cleanly over any background.
 
 ## How it works
 
