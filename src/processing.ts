@@ -310,15 +310,28 @@ export function process(
   const thick = dilateDisk(skel, w, h, params.lineWidth);
   const smoothed = gaussianBlur(thick, w, h, params.smoothSigma);
 
-  // Line-drawing mode: draw the smoothed skeleton as black lines on a
-  // transparent background. The blurred mask doubles as an anti-aliased alpha.
+  // Line-drawing mode: draw the smoothed skeleton as crisp black lines whose
+  // width matches the line-thickness setting. We cap the smoothing relative to
+  // the line width so thin lines survive — a wide blur followed by a 0.5
+  // threshold would erase a 1px line (or feather it into a fat soft band).
   if (params.mode === "lines") {
+    // Solid line core at the requested width. For thin lines we use the
+    // skeleton/dilated mask directly (a blur + 0.5 threshold would break a 1px
+    // line into dashes). For thicker lines we can safely smooth the shape,
+    // capping the blur so the center stays above the threshold.
+    let core = thick;
+    if (params.lineWidth >= 3 && params.smoothSigma > 0) {
+      const effSigma = Math.min(params.smoothSigma, 0.6 * params.lineWidth);
+      const sm = gaussianBlur(thick, w, h, effSigma);
+      core = new Uint8Array(n);
+      for (let i = 0; i < n; i++) core[i] = sm[i] > 0.5 ? 1 : 0;
+    }
+    // Light feather for anti-aliased edges; the solid core keeps full opacity.
+    const aa = gaussianBlur(core, w, h, 0.6);
     const out = new Uint8ClampedArray(n * 4);
     for (let i = 0; i < n; i++) {
-      let v = smoothed[i];
-      if (v <= 0) continue;
-      if (v > 1) v = 1;
-      out[i * 4 + 3] = Math.round(v * 255); // RGB already 0 (black)
+      const a = core[i] ? 255 : Math.round(Math.min(1, aa[i]) * 255);
+      if (a > 0) out[i * 4 + 3] = a; // RGB already 0 (black)
     }
     return out;
   }

@@ -182,7 +182,7 @@ export default function App() {
 
   const sliders = useMemo(
     () => [
-      { key: "lineWidth" as const, label: "Line thickness", min: 2, max: 30, step: 1, value: params.lineWidth },
+      { key: "lineWidth" as const, label: "Line thickness", min: 1, max: 30, step: 1, value: params.lineWidth },
       { key: "bgThresh" as const, label: "Detection sensitivity", min: 150, max: 250, step: 1, value: params.bgThresh },
       { key: "smoothSigma" as const, label: "Smoothing", min: 0, max: 5, step: 0.5, value: params.smoothSigma },
       { key: "pruneLen" as const, label: "Spur cleanup", min: 0, max: 40, step: 1, value: params.pruneLen },
