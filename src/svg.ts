@@ -264,6 +264,102 @@ export function buildFilledSvg(
   return svgDoc(w, h, `  <path fill="#000000" fill-rule="evenodd" stroke="none" d="${d}"/>`);
 }
 
+/** Stitch the raw skeleton trace back into continuous strokes. The trace splits
+ *  the drawing at every junction, and junction clusters leave a swarm of tiny
+ *  stubs. We (1) stitch 2-way meetings into longer lines, (2) contract short
+ *  bridges between junctions (collapsing each cluster to a point), and (3) drop
+ *  short dangling spurs. */
+function mergePolylines(lines: Pt[][], minSpur: number, minBridge: number, minLoop: number): Pt[][] {
+  const snap = (p: Pt) => `${Math.round(p[0])},${Math.round(p[1])}`;
+  let cur = lines.filter((l) => l.length >= 2);
+
+  const buildEnds = () => {
+    const ends = new Map<string, number[]>();
+    cur.forEach((l, i) => {
+      const a = snap(l[0]);
+      const b = snap(l[l.length - 1]);
+      (ends.get(a) ?? ends.set(a, []).get(a)!).push(i);
+      (ends.get(b) ?? ends.set(b, []).get(b)!).push(i);
+    });
+    return ends;
+  };
+  const len = (l: Pt[]) => {
+    let s = 0;
+    for (let i = 1; i < l.length; i++) s += Math.hypot(l[i][0] - l[i - 1][0], l[i][1] - l[i - 1][1]);
+    return s;
+  };
+
+  // (1) Stitch every clean 2-way meeting until none remain.
+  const stitch = (): boolean => {
+    let any = false;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const ends = buildEnds();
+      const dead = new Set<number>();
+      const touched = new Set<number>();
+      for (const [k, idxs] of ends) {
+        const alive = idxs.filter((i) => !dead.has(i));
+        if (alive.length !== 2) continue;
+        const [i, j] = alive;
+        if (i === j || touched.has(i) || touched.has(j)) continue;
+        const A = cur[i];
+        const B = cur[j];
+        const Aor = snap(A[A.length - 1]) === k ? A : A.slice().reverse();
+        const Bor = snap(B[0]) === k ? B : B.slice().reverse();
+        cur[i] = Aor.concat(Bor.slice(1));
+        dead.add(j);
+        touched.add(i);
+        touched.add(j);
+        changed = true;
+        any = true;
+      }
+      if (dead.size) cur = cur.filter((_, i) => !dead.has(i));
+    }
+    return any;
+  };
+
+  // (2) Collapse one short junction-to-junction bridge by snapping its far end
+  // onto its near end across all lines, then removing it.
+  const contractOneBridge = (): boolean => {
+    const ends = buildEnds();
+    for (let i = 0; i < cur.length; i++) {
+      const l = cur[i];
+      if (isClosed(l) || len(l) >= minBridge) continue;
+      const a = snap(l[0]);
+      const b = snap(l[l.length - 1]);
+      if (a === b) continue;
+      if ((ends.get(a)?.length ?? 0) < 2 || (ends.get(b)?.length ?? 0) < 2) continue;
+      const target = l[0];
+      for (let m = 0; m < cur.length; m++) {
+        if (m === i) continue;
+        const L = cur[m];
+        if (snap(L[0]) === b) L[0] = target.slice() as Pt;
+        if (snap(L[L.length - 1]) === b) L[L.length - 1] = target.slice() as Pt;
+      }
+      cur.splice(i, 1);
+      return true;
+    }
+    return false;
+  };
+
+  let go = true;
+  while (go) {
+    const s = stitch();
+    const c = contractOneBridge();
+    go = s || c;
+  }
+
+  // (3) Drop leftover noise: tiny closed loops, and short open lines with a
+  // free (dangling) endpoint (spurs).
+  const ends = buildEnds();
+  return cur.filter((l) => {
+    if (isClosed(l)) return len(l) >= minLoop;
+    const free = (ends.get(snap(l[0]))?.length ?? 0) <= 1 || (ends.get(snap(l[l.length - 1]))?.length ?? 0) <= 1;
+    return !free || len(l) >= minSpur;
+  });
+}
+
 export function buildStrokedSvg(
   skeleton: Uint8Array,
   w: number,
@@ -271,7 +367,7 @@ export function buildStrokedSvg(
   strokeWidth: number,
   simplifyTol = 1.0,
 ): string {
-  const polylines = traceSkeleton(skeleton, w, h);
+  const polylines = mergePolylines(traceSkeleton(skeleton, w, h), 12, 12, 16);
   const polyLen = (pl: Pt[]) => {
     let L = 0;
     for (let i = 1; i < pl.length; i++) L += Math.hypot(pl[i][0] - pl[i - 1][0], pl[i][1] - pl[i - 1][1]);
