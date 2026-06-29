@@ -37,6 +37,54 @@ async function fileToImageData(file: File, maxDim: number): Promise<ImageData> {
   return ctx.getImageData(0, 0, w, h);
 }
 
+// Cricut ignores SVG <text> on import, so the numbers layer must be real vector
+// geometry. We draw each digit with a 7-segment stroke font.
+const SEG: Record<string, [[number, number], [number, number]]> = {
+  a: [[0, 0], [1, 0]],
+  b: [[1, 0], [1, 1]],
+  c: [[1, 1], [1, 2]],
+  d: [[0, 2], [1, 2]],
+  e: [[0, 1], [0, 2]],
+  f: [[0, 0], [0, 1]],
+  g: [[0, 1], [1, 1]],
+};
+const DIGIT_SEGS: Record<string, string[]> = {
+  "0": ["a", "b", "c", "d", "e", "f"],
+  "1": ["b", "c"],
+  "2": ["a", "b", "g", "e", "d"],
+  "3": ["a", "b", "g", "c", "d"],
+  "4": ["f", "g", "b", "c"],
+  "5": ["a", "f", "g", "c", "d"],
+  "6": ["a", "f", "g", "e", "d", "c"],
+  "7": ["a", "b", "c"],
+  "8": ["a", "b", "c", "d", "e", "f", "g"],
+  "9": ["a", "b", "c", "d", "f", "g"],
+};
+
+/** SVG path data for a number centered at (cx, cy) with digit height `size`. */
+function numberSegmentPath(label: number, cx: number, cy: number, size: number): string {
+  const str = String(label);
+  const digitH = size;
+  const digitW = size * 0.55;
+  const gap = size * 0.25;
+  const total = str.length * digitW + (str.length - 1) * gap;
+  const x0 = cx - total / 2;
+  const y0 = cy - digitH / 2;
+  const out: string[] = [];
+  for (let i = 0; i < str.length; i++) {
+    const dx = x0 + i * (digitW + gap);
+    for (const s of DIGIT_SEGS[str[i]] ?? []) {
+      const [p, q] = SEG[s];
+      const ax = dx + p[0] * digitW;
+      const ay = y0 + (p[1] / 2) * digitH;
+      const bx = dx + q[0] * digitW;
+      const by = y0 + (q[1] / 2) * digitH;
+      out.push(`M ${ax.toFixed(1)},${ay.toFixed(1)} L ${bx.toFixed(1)},${by.toFixed(1)}`);
+    }
+  }
+  return out.join(" ");
+}
+
 export default function App() {
   const [params, setParams] = useState<Params>(DEFAULT_PARAMS);
   const [busy, setBusy] = useState(false);
@@ -364,15 +412,20 @@ export default function App() {
       // Use current dragged positions if the preview is open, otherwise fetch fresh.
       const positions = numPositions ?? await requestNumberPositions();
       const { w, h } = { w: canvas.width, h: canvas.height };
-      const texts = positions.map(({ x, y, label }) => {
-        return `  <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arial,sans-serif"` +
-          ` font-size="${numberSize}" text-anchor="middle" dominant-baseline="central"` +
-          ` fill="#000000">${label}</text>`;
-      });
+      // Real vector strokes (Cricut ignores <text>). One <path> per number so
+      // each is its own object; set them to "Draw"/Pen or "Cut" in Cricut.
+      const strokeW = Math.max(1, Math.round(numberSize * 0.12));
+      const paths = positions.map(
+        ({ x, y, label }) =>
+          `  <path d="${numberSegmentPath(label, x, y, numberSize)}"/>`,
+      );
       const svg =
         `<?xml version="1.0" encoding="UTF-8"?>\n` +
         `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">\n` +
-        texts.join("\n") + `\n</svg>\n`;
+        `  <g fill="none" stroke="#000000" stroke-width="${strokeW}" ` +
+        `stroke-linecap="round" stroke-linejoin="round">\n` +
+        paths.join("\n") +
+        `\n  </g>\n</svg>\n`;
       const blob = new Blob([svg], { type: "image/svg+xml" });
       await deliver(blob, `${baseName}-numbers.svg`);
     } catch {
@@ -455,22 +508,38 @@ export default function App() {
                       }}
                     >
                       {numPositions.map((pos, i) => {
+                        // Same 7-segment geometry as the export, so the preview
+                        // matches what Cricut receives. A transparent box gives
+                        // an easy drag target around the thin strokes.
+                        const str = String(pos.label);
+                        const digitW = numberSize * 0.55;
+                        const gap = numberSize * 0.25;
+                        const boxW = str.length * digitW + (str.length - 1) * gap;
+                        const pad = numberSize * 0.3;
                         return (
-                          <text
+                          <g
                             key={pos.label}
-                            x={pos.x}
-                            y={pos.y}
-                            fontFamily="Arial,sans-serif"
-                            fontSize={numberSize}
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fill={params.mode === "cells" ? "#ffffff" : "#000000"}
-                            style={{ cursor: "grab", userSelect: "none" }}
+                            style={{ cursor: "grab" }}
                             onMouseDown={(e) => { e.preventDefault(); setDraggingIdx(i); }}
                             onTouchStart={(e) => { e.preventDefault(); setDraggingIdx(i); }}
                           >
-                            {pos.label}
-                          </text>
+                            <rect
+                              x={pos.x - boxW / 2 - pad}
+                              y={pos.y - numberSize / 2 - pad}
+                              width={boxW + pad * 2}
+                              height={numberSize + pad * 2}
+                              fill="transparent"
+                            />
+                            <path
+                              d={numberSegmentPath(pos.label, pos.x, pos.y, numberSize)}
+                              fill="none"
+                              stroke={params.mode === "cells" ? "#ffffff" : "#000000"}
+                              strokeWidth={Math.max(1, numberSize * 0.12)}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{ pointerEvents: "none" }}
+                            />
+                          </g>
                         );
                       })}
                     </svg>
