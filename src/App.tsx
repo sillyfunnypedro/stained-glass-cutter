@@ -46,6 +46,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [highRes, setHighRes] = useState(false);
   const [showNumbers, setShowNumbers] = useState(false);
+  const [numberSize, setNumberSize] = useState(28);
   const [numPositions, setNumPositions] = useState<NumberPosition[] | null>(null);
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
   const overlayRef = useRef<SVGSVGElement | null>(null);
@@ -366,11 +367,10 @@ export default function App() {
       // Use current dragged positions if the preview is open, otherwise fetch fresh.
       const positions = numPositions ?? await requestNumberPositions();
       const { w, h } = { w: canvas.width, h: canvas.height };
-      const texts = positions.map(({ x, y, area, label }) => {
-        const fs = Math.max(8, Math.min(60, Math.round(Math.sqrt(area) * 0.3)));
+      const texts = positions.map(({ x, y, label }) => {
         return `  <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arial,sans-serif"` +
-          ` font-size="${fs}" text-anchor="middle" dominant-baseline="central"` +
-          ` fill="#ffffff">${label}</text>`;
+          ` font-size="${numberSize}" text-anchor="middle" dominant-baseline="central"` +
+          ` fill="#000000">${label}</text>`;
       });
       const svg =
         `<?xml version="1.0" encoding="UTF-8"?>\n` +
@@ -383,7 +383,7 @@ export default function App() {
     } finally {
       setSvgBusy(false);
     }
-  }, [numPositions, requestNumberPositions, deliver, baseName]);
+  }, [numPositions, requestNumberPositions, deliver, baseName, numberSize]);
 
   const set = <K extends keyof Params>(key: K) => (e: ChangeEvent<HTMLInputElement>) =>
     setParams((p) => ({ ...p, [key]: Number(e.target.value) }));
@@ -458,14 +458,13 @@ export default function App() {
                       }}
                     >
                       {numPositions.map((pos, i) => {
-                        const fontSize = Math.max(8, Math.min(60, Math.round(Math.sqrt(pos.area) * 0.3)));
                         return (
                           <text
                             key={pos.label}
                             x={pos.x}
                             y={pos.y}
                             fontFamily="Arial,sans-serif"
-                            fontSize={fontSize}
+                            fontSize={numberSize}
                             textAnchor="middle"
                             dominantBaseline="central"
                             fill="#ffffff"
@@ -531,6 +530,23 @@ export default function App() {
                   <small>overlay cell numbers on the preview</small>
                 </span>
               </label>
+            )}
+
+            {params.mode === "cells" && hasResult && showNumbers && (
+              <div className="control">
+                <label>
+                  Number size
+                  <span className="val">{numberSize}</span>
+                </label>
+                <input
+                  type="range"
+                  min={10}
+                  max={90}
+                  step={1}
+                  value={numberSize}
+                  onChange={(e) => setNumberSize(Number(e.target.value))}
+                />
+              </div>
             )}
 
             <label className="reso">

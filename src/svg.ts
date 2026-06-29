@@ -306,19 +306,6 @@ export function computeNumberPositions(interior: Uint8Array, w: number, h: numbe
   return components.map((c, i) => ({ x: c.cx, y: c.cy, area: c.area, label: i + 1 }));
 }
 
-export function buildNumberedSvgFromPositions(positions: NumberPosition[], w: number, h: number): string {
-  const texts = positions.map(({ x, y, area, label }) => {
-    const fontSize = Math.max(8, Math.min(60, Math.round(Math.sqrt(area) * 0.3)));
-    return (
-      `  <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" ` +
-      `font-family="Arial,sans-serif" font-size="${fontSize}" ` +
-      `text-anchor="middle" dominant-baseline="central" ` +
-      `fill="#000000">${label}</text>`
-    );
-  });
-  return svgDoc(w, h, texts.join("\n"));
-}
-
 // --------------------------------------------------------------------------- //
 // Skeleton graph tracing -> centerline polylines.
 // --------------------------------------------------------------------------- //
