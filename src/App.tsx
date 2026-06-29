@@ -236,21 +236,18 @@ export default function App() {
     if (fileRef.current) void decodeAndRun(fileRef.current, highRes);
   }, [highRes, decodeAndRun]);
 
-  // Turn off numbers preview when leaving cells mode.
+  // Compute positions once when the overlay is first turned on, then leave them
+  // put — changing a parameter must not move (or reset) the numbers. Toggle the
+  // overlay off/on to re-place them from scratch.
   useEffect(() => {
-    if (params.mode !== "cells") setShowNumbers(false);
-  }, [params.mode]);
-
-  // Fetch/refresh positions whenever the overlay is on and params change.
-  useEffect(() => {
-    if (!showNumbers || !hasResult) return;
+    if (!showNumbers || !hasResult || numPositions) return;
     const t = setTimeout(async () => {
       try {
         setNumPositions(await requestNumberPositions());
       } catch { /* ignore */ }
     }, 250);
     return () => clearTimeout(t);
-  }, [showNumbers, hasResult, requestNumberPositions]);
+  }, [showNumbers, hasResult, numPositions, requestNumberPositions]);
 
   // Clear positions when the overlay is hidden.
   useEffect(() => {
@@ -467,7 +464,7 @@ export default function App() {
                             fontSize={numberSize}
                             textAnchor="middle"
                             dominantBaseline="central"
-                            fill="#ffffff"
+                            fill={params.mode === "cells" ? "#ffffff" : "#000000"}
                             style={{ cursor: "grab", userSelect: "none" }}
                             onMouseDown={(e) => { e.preventDefault(); setDraggingIdx(i); }}
                             onTouchStart={(e) => { e.preventDefault(); setDraggingIdx(i); }}
@@ -517,7 +514,7 @@ export default function App() {
               </div>
             ))}
 
-            {params.mode === "cells" && hasResult && (
+            {hasResult && (
               <label className="reso">
                 <input
                   type="checkbox"
@@ -527,12 +524,12 @@ export default function App() {
                 />
                 <span>
                   Preview numbers
-                  <small>overlay cell numbers on the preview</small>
+                  <small>overlay piece numbers on the preview</small>
                 </span>
               </label>
             )}
 
-            {params.mode === "cells" && hasResult && showNumbers && (
+            {hasResult && showNumbers && (
               <div className="control">
                 <label>
                   Number size
@@ -568,14 +565,9 @@ export default function App() {
               </button>
 
               {params.mode === "cells" ? (
-                <>
-                  <button onClick={() => saveSvg("cells")} disabled={!hasResult || busy || svgBusy}>
-                    {svgBusy ? "Working…" : "SVG · glass pieces (Cricut)"}
-                  </button>
-                  <button onClick={saveNumbersSvg} disabled={!hasResult || busy || svgBusy}>
-                    {svgBusy ? "Working…" : "SVG · numbers layer (Cricut)"}
-                  </button>
-                </>
+                <button onClick={() => saveSvg("cells")} disabled={!hasResult || busy || svgBusy}>
+                  {svgBusy ? "Working…" : "SVG · glass pieces (Cricut)"}
+                </button>
               ) : (
                 <>
                   <button
@@ -592,6 +584,12 @@ export default function App() {
                   </button>
                 </>
               )}
+
+              {/* Numbers layer works from the enclosed regions, so it's
+                  available in both modes. */}
+              <button onClick={saveNumbersSvg} disabled={!hasResult || busy || svgBusy}>
+                {svgBusy ? "Working…" : "SVG · numbers layer (Cricut)"}
+              </button>
 
               {isMobile && (
                 <p className="hint">
