@@ -292,7 +292,7 @@ export function buildNumberedSvg(interior: Uint8Array, w: number, h: number): st
       `  <text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" ` +
         `font-family="Arial,sans-serif" font-size="${fontSize}" ` +
         `text-anchor="middle" dominant-baseline="central" ` +
-        `fill="#000000">${i + 1}</text>`,
+        `fill="#ffffff">${i + 1}</text>`,
     );
   }
 
