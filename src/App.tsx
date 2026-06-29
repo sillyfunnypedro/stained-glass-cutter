@@ -37,6 +37,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [highRes, setHighRes] = useState(false);
+  const [showNumbers, setShowNumbers] = useState(false);
+  const [numbersUrl, setNumbersUrl] = useState<string | null>(null);
+  const numbersUrlRef = useRef<string | null>(null);
 
   const paramsRef = useRef(params);
   paramsRef.current = params;
@@ -198,6 +201,36 @@ export default function App() {
     if (fileRef.current) void decodeAndRun(fileRef.current, highRes);
   }, [highRes, decodeAndRun]);
 
+  // Turn off numbers preview when leaving cells mode.
+  useEffect(() => {
+    if (params.mode !== "cells") setShowNumbers(false);
+  }, [params.mode]);
+
+  // Fetch/refresh the numbers overlay whenever the toggle is on and params change.
+  useEffect(() => {
+    if (!showNumbers || !hasResult) return;
+    const t = setTimeout(async () => {
+      try {
+        const svg = await requestSvg("cells-numbers");
+        const blob = new Blob([svg], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        if (numbersUrlRef.current) URL.revokeObjectURL(numbersUrlRef.current);
+        numbersUrlRef.current = url;
+        setNumbersUrl(url);
+      } catch { /* ignore */ }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [showNumbers, hasResult, requestSvg]);
+
+  // Clean up blob URL when the toggle is turned off.
+  useEffect(() => {
+    if (!showNumbers && numbersUrlRef.current) {
+      URL.revokeObjectURL(numbersUrlRef.current);
+      numbersUrlRef.current = null;
+      setNumbersUrl(null);
+    }
+  }, [showNumbers]);
+
   const onFileInput = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) void loadFile(file);
@@ -326,7 +359,23 @@ export default function App() {
         <div className="workspace">
           <div className="stage">
             <div className="checker">
-              <canvas ref={canvasRef} className="result" />
+              <div style={{ position: "relative", display: "flex", maxWidth: "100%" }}>
+                <canvas ref={canvasRef} className="result" />
+                {numbersUrl && (
+                  <img
+                    src={numbersUrl}
+                    alt=""
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      pointerEvents: "none",
+                    }}
+                  />
+                )}
+              </div>
             </div>
             {busy && <div className="spinner" aria-label="Processing" />}
           </div>
@@ -363,6 +412,21 @@ export default function App() {
                 />
               </div>
             ))}
+
+            {params.mode === "cells" && hasResult && (
+              <label className="reso">
+                <input
+                  type="checkbox"
+                  checked={showNumbers}
+                  onChange={(e) => setShowNumbers(e.target.checked)}
+                  disabled={busy}
+                />
+                <span>
+                  Preview numbers
+                  <small>overlay cell numbers on the preview</small>
+                </span>
+              </label>
+            )}
 
             <label className="reso">
               <input
