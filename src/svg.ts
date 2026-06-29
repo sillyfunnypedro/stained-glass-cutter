@@ -192,25 +192,29 @@ interface CellComponent {
 }
 
 function findInteriorComponents(mask: Uint8Array, w: number, h: number): CellComponent[] {
-  const visited = new Uint8Array(w * h);
+  const n = w * h;
+  const visited = new Uint8Array(n);
   const components: CellComponent[] = [];
-  const stack = new Int32Array(w * h);
+  const stack = new Int32Array(n);
+  // Scratch buffer so we can find the pixel closest to the centroid after the
+  // flood fill — the centroid of a concave cell can fall outside the shape.
+  const pixels = new Int32Array(n);
 
-  for (let start = 0; start < w * h; start++) {
+  for (let start = 0; start < n; start++) {
     if (!mask[start] || visited[start]) continue;
 
-    let sp = 0;
-    let sumX = 0, sumY = 0, count = 0;
+    let sp = 0, pixCount = 0;
+    let sumX = 0, sumY = 0;
     stack[sp++] = start;
     visited[start] = 1;
 
     while (sp > 0) {
       const p = stack[--sp];
+      pixels[pixCount++] = p;
       const x = p % w;
       const y = (p / w) | 0;
       sumX += x;
       sumY += y;
-      count++;
 
       if (x > 0 && mask[p - 1] && !visited[p - 1]) { visited[p - 1] = 1; stack[sp++] = p - 1; }
       if (x < w - 1 && mask[p + 1] && !visited[p + 1]) { visited[p + 1] = 1; stack[sp++] = p + 1; }
@@ -218,7 +222,20 @@ function findInteriorComponents(mask: Uint8Array, w: number, h: number): CellCom
       if (y < h - 1 && mask[p + w] && !visited[p + w]) { visited[p + w] = 1; stack[sp++] = p + w; }
     }
 
-    components.push({ cx: sumX / count, cy: sumY / count, area: count });
+    // Centroid may lie outside the shape for concave cells. Find the component
+    // pixel that is closest to the centroid — that point is always inside.
+    const cx = sumX / pixCount;
+    const cy = sumY / pixCount;
+    let bestDist = Infinity, labelX = cx, labelY = cy;
+    for (let i = 0; i < pixCount; i++) {
+      const p = pixels[i];
+      const px = p % w;
+      const py = (p / w) | 0;
+      const d = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+      if (d < bestDist) { bestDist = d; labelX = px; labelY = py; }
+    }
+
+    components.push({ cx: labelX, cy: labelY, area: pixCount });
   }
 
   return components;
