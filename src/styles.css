@@ -183,6 +183,38 @@ button.primary {
 }
 .hint strong { color: var(--text); font-weight: 600; }
 
+.about {
+  margin-top: 28px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.about > summary {
+  cursor: pointer;
+  padding: 14px 16px;
+  font-weight: 600;
+  list-style: none;
+}
+.about > summary::-webkit-details-marker { display: none; }
+.about > summary::before { content: "▸ "; color: var(--muted); }
+.about[open] > summary::before { content: "▾ "; }
+.about-body {
+  padding: 0 16px 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.about-body p { margin: 0 0 12px; }
+.about-body a { color: var(--accent); }
+.about-body .warn {
+  background: rgba(255, 200, 80, 0.08);
+  border: 1px solid rgba(255, 200, 80, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+}
+
 .build {
   margin-top: 24px;
   text-align: center;

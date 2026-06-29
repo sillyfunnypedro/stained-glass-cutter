@@ -421,6 +421,51 @@ export default function App() {
 
       {error && <p className="error">{error}</p>}
 
+      <details className="about">
+        <summary>About this app</summary>
+        <div className="about-body">
+          <p>
+            Upload, drag, or paste a line drawing and this app turns it into a
+            clean image you can save or cut. It finds the drawn lines, reduces
+            each one to its centerline, rebuilds them at a uniform width, and
+            then either fills the enclosed “glass piece” cells (Glass pieces
+            mode) or draws the smoothed centerlines (Line drawing mode) — black
+            on a transparent background. You can save a PNG or export an SVG for
+            cutting machines like Cricut.
+          </p>
+          <p>
+            Everything runs entirely in your browser — your image is never
+            uploaded to a server.
+          </p>
+          <p className="warn">
+            <strong>No guarantees.</strong> Results are provided strictly as-is
+            and are <strong>in no way guaranteed</strong> to be accurate, usable,
+            or suitable for any purpose. Always check the output yourself before
+            cutting, printing, or relying on it.
+          </p>
+          <p>
+            Free and open source under{" "}
+            <a
+              href="https://creativecommons.org/publicdomain/zero/1.0/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Creative Commons CC0 1.0
+            </a>{" "}
+            (public domain) — use it however you like; attribution appreciated
+            but not required.{" "}
+            <a
+              href="https://github.com/sillyfunnypedro/stained-glass-cutter"
+              target="_blank"
+              rel="noreferrer"
+            >
+              View the source on GitHub
+            </a>
+            .
+          </p>
+        </div>
+      </details>
+
       <footer className="build">
         build {__BUILD_ID__} · {__BUILD_TIME__} UTC
       </footer>
