@@ -313,7 +313,7 @@ export function buildNumberedSvgFromPositions(positions: NumberPosition[], w: nu
       `  <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" ` +
       `font-family="Arial,sans-serif" font-size="${fontSize}" ` +
       `text-anchor="middle" dominant-baseline="central" ` +
-      `fill="#ffffff">${label}</text>`
+      `fill="#000000">${label}</text>`
     );
   });
   return svgDoc(w, h, texts.join("\n"));
