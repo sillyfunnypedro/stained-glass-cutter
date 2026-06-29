@@ -182,6 +182,49 @@ const isClosed = (poly: Pt[]) =>
   Math.hypot(poly[0][0] - poly[poly.length - 1][0], poly[0][1] - poly[poly.length - 1][1]) < 1.5;
 
 // --------------------------------------------------------------------------- //
+// Connected-component labeler for the interior mask: returns centroid + area
+// for each distinct glass-piece cell (4-connected flood fill).
+// --------------------------------------------------------------------------- //
+interface CellComponent {
+  cx: number;
+  cy: number;
+  area: number;
+}
+
+function findInteriorComponents(mask: Uint8Array, w: number, h: number): CellComponent[] {
+  const visited = new Uint8Array(w * h);
+  const components: CellComponent[] = [];
+  const stack = new Int32Array(w * h);
+
+  for (let start = 0; start < w * h; start++) {
+    if (!mask[start] || visited[start]) continue;
+
+    let sp = 0;
+    let sumX = 0, sumY = 0, count = 0;
+    stack[sp++] = start;
+    visited[start] = 1;
+
+    while (sp > 0) {
+      const p = stack[--sp];
+      const x = p % w;
+      const y = (p / w) | 0;
+      sumX += x;
+      sumY += y;
+      count++;
+
+      if (x > 0 && mask[p - 1] && !visited[p - 1]) { visited[p - 1] = 1; stack[sp++] = p - 1; }
+      if (x < w - 1 && mask[p + 1] && !visited[p + 1]) { visited[p + 1] = 1; stack[sp++] = p + 1; }
+      if (y > 0 && mask[p - w] && !visited[p - w]) { visited[p - w] = 1; stack[sp++] = p - w; }
+      if (y < h - 1 && mask[p + w] && !visited[p + w]) { visited[p + w] = 1; stack[sp++] = p + w; }
+    }
+
+    components.push({ cx: sumX / count, cy: sumY / count, area: count });
+  }
+
+  return components;
+}
+
+// --------------------------------------------------------------------------- //
 // Public builders.
 // --------------------------------------------------------------------------- //
 export function buildFilledSvg(
@@ -227,6 +270,33 @@ export function buildStrokedSvg(
     `  <path fill="none" stroke="#000000" stroke-width="${strokeWidth}" ` +
       `stroke-linecap="round" stroke-linejoin="round" d="${d}"/>`,
   );
+}
+
+// --------------------------------------------------------------------------- //
+// Numbers layer: one SVG <text> per glass-piece cell, centred inside it.
+// Font size scales with ~sqrt(cell area) so large and small cells both get
+// a legible number. Cells smaller than minArea (noise fragments) are skipped.
+// --------------------------------------------------------------------------- //
+export function buildNumberedSvg(interior: Uint8Array, w: number, h: number): string {
+  const minArea = 100;
+  const components = findInteriorComponents(interior, w, h).filter((c) => c.area >= minArea);
+
+  // Number top-to-bottom then left-to-right for a natural reading order.
+  components.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+
+  const texts: string[] = [];
+  for (let i = 0; i < components.length; i++) {
+    const { cx, cy, area } = components[i];
+    const fontSize = Math.max(8, Math.min(60, Math.round(Math.sqrt(area) * 0.3)));
+    texts.push(
+      `  <text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" ` +
+        `font-family="Arial,sans-serif" font-size="${fontSize}" ` +
+        `text-anchor="middle" dominant-baseline="central" ` +
+        `fill="#000000">${i + 1}</text>`,
+    );
+  }
+
+  return svgDoc(w, h, texts.join("\n"));
 }
 
 // --------------------------------------------------------------------------- //

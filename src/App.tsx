@@ -259,7 +259,9 @@ export default function App() {
       try {
         const svg = await requestSvg(variant);
         const suffix =
-          variant === "cells" ? "pieces" : variant === "lines-outline" ? "lines-outline" : "lines";
+          variant === "cells" ? "pieces" :
+          variant === "cells-numbers" ? "numbers" :
+          variant === "lines-outline" ? "lines-outline" : "lines";
         const blob = new Blob([svg], { type: "image/svg+xml" });
         await deliver(blob, `${baseName}-${suffix}.svg`);
       } catch {
@@ -381,9 +383,14 @@ export default function App() {
               </button>
 
               {params.mode === "cells" ? (
-                <button onClick={() => saveSvg("cells")} disabled={!hasResult || busy || svgBusy}>
-                  {svgBusy ? "Working…" : "Save SVG (for Cricut)"}
-                </button>
+                <>
+                  <button onClick={() => saveSvg("cells")} disabled={!hasResult || busy || svgBusy}>
+                    {svgBusy ? "Working…" : "SVG · glass pieces (Cricut)"}
+                  </button>
+                  <button onClick={() => saveSvg("cells-numbers")} disabled={!hasResult || busy || svgBusy}>
+                    {svgBusy ? "Working…" : "SVG · numbers layer (Cricut)"}
+                  </button>
+                </>
               ) : (
                 <>
                   <button

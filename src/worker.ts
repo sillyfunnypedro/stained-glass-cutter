@@ -1,8 +1,8 @@
 // Runs the image pipeline off the main thread so the UI stays responsive.
 import { process, computeMasks, type Params } from "./processing";
-import { buildFilledSvg, buildStrokedSvg } from "./svg";
+import { buildFilledSvg, buildNumberedSvg, buildStrokedSvg } from "./svg";
 
-export type SvgVariant = "cells" | "lines-outline" | "lines-centerline";
+export type SvgVariant = "cells" | "cells-numbers" | "lines-outline" | "lines-centerline";
 
 interface BaseRequest {
   id: number;
@@ -43,6 +43,8 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     let svg: string;
     if (req.variant === "cells") {
       svg = buildFilledSvg(m.interior, m.w, m.h, req.params.smoothSigma);
+    } else if (req.variant === "cells-numbers") {
+      svg = buildNumberedSvg(m.interior, m.w, m.h);
     } else if (req.variant === "lines-outline") {
       svg = buildFilledSvg(m.lineCore, m.w, m.h, req.params.smoothSigma);
     } else {
