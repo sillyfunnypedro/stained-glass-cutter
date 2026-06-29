@@ -272,9 +272,17 @@ export function buildStrokedSvg(
   simplifyTol = 1.0,
 ): string {
   const polylines = traceSkeleton(skeleton, w, h);
+  const polyLen = (pl: Pt[]) => {
+    let L = 0;
+    for (let i = 1; i < pl.length; i++) L += Math.hypot(pl[i][0] - pl[i - 1][0], pl[i][1] - pl[i - 1][1]);
+    return L;
+  };
   const paths: string[] = [];
   for (const pl of polylines) {
     const closed = pl.length > 3 && isClosed(pl);
+    // Drop tiny straggler fragments (e.g. leftover thickness pixels) so they
+    // don't become stray cut lines.
+    if (!closed && polyLen(pl) < 4) continue;
     let pts = closed ? pl.slice(0, -1) : pl;
     pts = rdp(pts, simplifyTol);
     if (closed && pts.length >= 3) paths.push(bezierClosed(pts));
@@ -329,22 +337,42 @@ function traceSkeleton(skel: Uint8Array, w: number, h: number): Pt[][] {
     return out;
   };
 
-  const degree = new Uint8Array(w * h);
+  // Classify pixels by *connectivity number* — the count of distinct
+  // 8-connected neighbour groups around the ring: 1 = endpoint, 2 = through
+  // pixel, >=3 = real junction. This is robust to thick / staircase skeleton
+  // pixels that have extra raw neighbours but still lie along a single line;
+  // using the raw neighbour count instead mis-flags those as junctions and
+  // shatters every line into thousands of 2px fragments.
+  const ring = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+  const isNode = new Uint8Array(w * h);
   const pixels: number[] = [];
   for (let p = 0; p < w * h; p++) {
-    if (skel[p]) {
-      pixels.push(p);
-      degree[p] = neighbors(p).length;
+    if (!skel[p]) continue;
+    pixels.push(p);
+    const x = p % w;
+    const y = (p / w) | 0;
+    let groups = 0;
+    for (let i = 0; i < 8; i++) {
+      const [dx, dy] = ring[i];
+      const [px, py] = ring[(i + 7) % 8];
+      const cx = x + dx, cy = y + dy;
+      const ox = x + px, oy = y + py;
+      const cOn = cx >= 0 && cx < w && cy >= 0 && cy < h && skel[cy * w + cx];
+      const oOn = ox >= 0 && ox < w && oy >= 0 && oy < h && skel[oy * w + ox];
+      if (cOn && !oOn) groups++;
     }
+    if (groups !== 2) isNode[p] = 1;
   }
 
   const pt = (p: number): Pt => [(p % w) + 0.5, ((p / w) | 0) + 0.5];
   const edgeUsed = new Set<string>();
   const ekey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+  const adjacent = (a: number, b: number) =>
+    Math.abs((a % w) - (b % w)) <= 1 && Math.abs(((a / w) | 0) - ((b / w) | 0)) <= 1;
   const polylines: Pt[][] = [];
 
-  // Walk a chain starting from node `start` toward neighbor `first`, until the
-  // next node (degree != 2) or back to a used edge.
+  // Walk from `start` toward `first`, continuing through through-pixels until a
+  // node (endpoint/junction) or a dead end.
   const walk = (start: number, first: number): number[] => {
     const path = [start];
     let prev = start;
@@ -352,10 +380,12 @@ function traceSkeleton(skel: Uint8Array, w: number, h: number): Pt[][] {
     while (true) {
       path.push(cur);
       edgeUsed.add(ekey(prev, cur));
-      if (degree[cur] !== 2) break; // reached a node/endpoint
-      const nb = neighbors(cur);
-      const next = nb.find((q) => q !== prev && !edgeUsed.has(ekey(cur, q)));
-      if (next === undefined) break;
+      if (isNode[cur]) break;
+      const cand = neighbors(cur).filter((q) => q !== prev && !edgeUsed.has(ekey(cur, q)));
+      if (cand.length === 0) break;
+      // Prefer a neighbour not touching `prev` (forward along the line) over a
+      // parallel thickness pixel, to avoid zig-zagging.
+      const next = cand.find((q) => !adjacent(q, prev)) ?? cand[0];
       prev = cur;
       cur = next;
     }
@@ -364,16 +394,16 @@ function traceSkeleton(skel: Uint8Array, w: number, h: number): Pt[][] {
 
   // 1. Chains between nodes (endpoints / junctions).
   for (const p of pixels) {
-    if (degree[p] === 2) continue;
+    if (!isNode[p]) continue;
     for (const nb of neighbors(p)) {
       if (edgeUsed.has(ekey(p, nb))) continue;
       polylines.push(walk(p, nb).map(pt));
     }
   }
 
-  // 2. Pure loops (all degree 2, no nodes touched above).
+  // 2. Pure loops (no nodes, e.g. an isolated ring).
   for (const p of pixels) {
-    if (degree[p] !== 2) continue;
+    if (isNode[p]) continue;
     const nb = neighbors(p).filter((q) => !edgeUsed.has(ekey(p, q)));
     if (nb.length === 0) continue;
     const path = walk(p, nb[0]).map(pt);
