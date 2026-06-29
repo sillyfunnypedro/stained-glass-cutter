@@ -290,29 +290,32 @@ export function buildStrokedSvg(
 }
 
 // --------------------------------------------------------------------------- //
-// Numbers layer: one SVG <text> per glass-piece cell, centred inside it.
-// Font size scales with ~sqrt(cell area) so large and small cells both get
-// a legible number. Cells smaller than minArea (noise fragments) are skipped.
+// Numbers layer: one label per glass-piece cell.
+// Positions are computed here so the main thread can expose them as draggable
+// handles; the final SVG is built from whatever positions the user leaves them.
 // --------------------------------------------------------------------------- //
-export function buildNumberedSvg(interior: Uint8Array, w: number, h: number): string {
+
+/** One labelled cell: position is guaranteed inside the shape (never the raw
+ *  centroid, which can fall outside a concave cell). */
+export type NumberPosition = { x: number; y: number; area: number; label: number };
+
+export function computeNumberPositions(interior: Uint8Array, w: number, h: number): NumberPosition[] {
   const minArea = 100;
   const components = findInteriorComponents(interior, w, h).filter((c) => c.area >= minArea);
-
-  // Number top-to-bottom then left-to-right for a natural reading order.
   components.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+  return components.map((c, i) => ({ x: c.cx, y: c.cy, area: c.area, label: i + 1 }));
+}
 
-  const texts: string[] = [];
-  for (let i = 0; i < components.length; i++) {
-    const { cx, cy, area } = components[i];
+export function buildNumberedSvgFromPositions(positions: NumberPosition[], w: number, h: number): string {
+  const texts = positions.map(({ x, y, area, label }) => {
     const fontSize = Math.max(8, Math.min(60, Math.round(Math.sqrt(area) * 0.3)));
-    texts.push(
-      `  <text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" ` +
-        `font-family="Arial,sans-serif" font-size="${fontSize}" ` +
-        `text-anchor="middle" dominant-baseline="central" ` +
-        `fill="#ffffff">${i + 1}</text>`,
+    return (
+      `  <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" ` +
+      `font-family="Arial,sans-serif" font-size="${fontSize}" ` +
+      `text-anchor="middle" dominant-baseline="central" ` +
+      `fill="#ffffff">${label}</text>`
     );
-  }
-
+  });
   return svgDoc(w, h, texts.join("\n"));
 }
 

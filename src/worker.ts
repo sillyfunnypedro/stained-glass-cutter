@@ -1,8 +1,8 @@
 // Runs the image pipeline off the main thread so the UI stays responsive.
 import { process, computeMasks, type Params } from "./processing";
-import { buildFilledSvg, buildNumberedSvg, buildStrokedSvg } from "./svg";
+import { buildFilledSvg, buildStrokedSvg, computeNumberPositions, type NumberPosition } from "./svg";
 
-export type SvgVariant = "cells" | "cells-numbers" | "lines-outline" | "lines-centerline";
+export type SvgVariant = "cells" | "lines-outline" | "lines-centerline";
 
 interface BaseRequest {
   id: number;
@@ -18,7 +18,10 @@ export interface SvgRequest extends BaseRequest {
   kind: "svg";
   variant: SvgVariant;
 }
-export type WorkerRequest = PngRequest | SvgRequest;
+export interface NumberPositionsRequest extends BaseRequest {
+  kind: "number-positions";
+}
+export type WorkerRequest = PngRequest | SvgRequest | NumberPositionsRequest;
 
 export interface PngResponse {
   kind: "png";
@@ -32,19 +35,32 @@ export interface SvgResponse {
   id: number;
   svg: string;
 }
-export type WorkerResponse = PngResponse | SvgResponse;
+export interface NumberPositionsResponse {
+  kind: "number-positions";
+  id: number;
+  positions: NumberPosition[];
+}
+export type WorkerResponse = PngResponse | SvgResponse | NumberPositionsResponse;
+
+export type { NumberPosition };
 
 self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
   const data = new Uint8ClampedArray(req.buffer);
+
+  if (req.kind === "number-positions") {
+    const m = computeMasks(data, req.width, req.height, req.params);
+    const positions = computeNumberPositions(m.interior, m.w, m.h);
+    const res: NumberPositionsResponse = { kind: "number-positions", id: req.id, positions };
+    (self as unknown as Worker).postMessage(res);
+    return;
+  }
 
   if (req.kind === "svg") {
     const m = computeMasks(data, req.width, req.height, req.params);
     let svg: string;
     if (req.variant === "cells") {
       svg = buildFilledSvg(m.interior, m.w, m.h, req.params.smoothSigma);
-    } else if (req.variant === "cells-numbers") {
-      svg = buildNumberedSvg(m.interior, m.w, m.h);
     } else if (req.variant === "lines-outline") {
       svg = buildFilledSvg(m.lineCore, m.w, m.h, req.params.smoothSigma);
     } else {

@@ -12,7 +12,15 @@ import {
   PROCESS_DIM,
   type Params,
 } from "./processing";
-import type { PngRequest, SvgRequest, SvgVariant, WorkerResponse } from "./worker";
+import type {
+  NumberPosition,
+  NumberPositionsRequest,
+  NumberPositionsResponse,
+  PngRequest,
+  SvgRequest,
+  SvgVariant,
+  WorkerResponse,
+} from "./worker";
 
 /** Decode a File, fix EXIF orientation, downscale to maxDim, and return pixels. */
 async function fileToImageData(file: File, maxDim: number): Promise<ImageData> {
@@ -38,8 +46,9 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [highRes, setHighRes] = useState(false);
   const [showNumbers, setShowNumbers] = useState(false);
-  const [numbersUrl, setNumbersUrl] = useState<string | null>(null);
-  const numbersUrlRef = useRef<string | null>(null);
+  const [numPositions, setNumPositions] = useState<NumberPosition[] | null>(null);
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const overlayRef = useRef<SVGSVGElement | null>(null);
 
   const paramsRef = useRef(params);
   paramsRef.current = params;
@@ -50,6 +59,7 @@ export default function App() {
   const reqIdRef = useRef(0); // latest live-preview (png) request
   const svgIdRef = useRef(0);
   const svgPending = useRef(new Map<number, (svg: string) => void>());
+  const numPosPending = useRef(new Map<number, (p: NumberPosition[]) => void>());
 
   // Spin up the processing worker once.
   useEffect(() => {
@@ -60,10 +70,12 @@ export default function App() {
       const msg = e.data;
       if (msg.kind === "svg") {
         const resolve = svgPending.current.get(msg.id);
-        if (resolve) {
-          svgPending.current.delete(msg.id);
-          resolve(msg.svg);
-        }
+        if (resolve) { svgPending.current.delete(msg.id); resolve(msg.svg); }
+        return;
+      }
+      if (msg.kind === "number-positions") {
+        const resolve = numPosPending.current.get(msg.id);
+        if (resolve) { numPosPending.current.delete(msg.id); resolve((msg as NumberPositionsResponse).positions); }
         return;
       }
       if (msg.id !== reqIdRef.current) return; // a newer request superseded this one
@@ -120,6 +132,28 @@ export default function App() {
         const req: SvgRequest = {
           kind: "svg",
           variant,
+          id,
+          buffer: copy.buffer,
+          width: src.width,
+          height: src.height,
+          params,
+        };
+        worker.postMessage(req, [copy.buffer]);
+      }),
+    [params],
+  );
+
+  const requestNumberPositions = useCallback(
+    () =>
+      new Promise<NumberPosition[]>((resolve, reject) => {
+        const worker = workerRef.current;
+        const src = sourceRef.current;
+        if (!worker || !src) { reject(new Error("no image")); return; }
+        const id = ++svgIdRef.current;
+        numPosPending.current.set(id, resolve);
+        const copy = src.data.slice();
+        const req: NumberPositionsRequest = {
+          kind: "number-positions",
           id,
           buffer: copy.buffer,
           width: src.width,
@@ -206,30 +240,50 @@ export default function App() {
     if (params.mode !== "cells") setShowNumbers(false);
   }, [params.mode]);
 
-  // Fetch/refresh the numbers overlay whenever the toggle is on and params change.
+  // Fetch/refresh positions whenever the overlay is on and params change.
   useEffect(() => {
     if (!showNumbers || !hasResult) return;
     const t = setTimeout(async () => {
       try {
-        const svg = await requestSvg("cells-numbers");
-        const blob = new Blob([svg], { type: "image/svg+xml" });
-        const url = URL.createObjectURL(blob);
-        if (numbersUrlRef.current) URL.revokeObjectURL(numbersUrlRef.current);
-        numbersUrlRef.current = url;
-        setNumbersUrl(url);
+        setNumPositions(await requestNumberPositions());
       } catch { /* ignore */ }
     }, 250);
     return () => clearTimeout(t);
-  }, [showNumbers, hasResult, requestSvg]);
+  }, [showNumbers, hasResult, requestNumberPositions]);
 
-  // Clean up blob URL when the toggle is turned off.
+  // Clear positions when the overlay is hidden.
   useEffect(() => {
-    if (!showNumbers && numbersUrlRef.current) {
-      URL.revokeObjectURL(numbersUrlRef.current);
-      numbersUrlRef.current = null;
-      setNumbersUrl(null);
-    }
+    if (!showNumbers) setNumPositions(null);
   }, [showNumbers]);
+
+  // Drag positions in SVG coordinate space.
+  useEffect(() => {
+    if (draggingIdx === null) return;
+    const svg = overlayRef.current;
+    if (!svg) return;
+    const move = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault();
+      const client = "touches" in e ? (e as TouchEvent).touches[0] : (e as MouseEvent);
+      const pt = svg.createSVGPoint();
+      pt.x = client.clientX;
+      pt.y = client.clientY;
+      const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+      setNumPositions((prev) =>
+        prev ? prev.map((p, i) => (i === draggingIdx ? { ...p, x: svgPt.x, y: svgPt.y } : p)) : prev,
+      );
+    };
+    const up = () => setDraggingIdx(null);
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    window.addEventListener("touchmove", move, { passive: false });
+    window.addEventListener("touchend", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      window.removeEventListener("touchmove", move);
+      window.removeEventListener("touchend", up);
+    };
+  }, [draggingIdx]);
 
   const onFileInput = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -292,9 +346,7 @@ export default function App() {
       try {
         const svg = await requestSvg(variant);
         const suffix =
-          variant === "cells" ? "pieces" :
-          variant === "cells-numbers" ? "numbers" :
-          variant === "lines-outline" ? "lines-outline" : "lines";
+          variant === "cells" ? "pieces" : variant === "lines-outline" ? "lines-outline" : "lines";
         const blob = new Blob([svg], { type: "image/svg+xml" });
         await deliver(blob, `${baseName}-${suffix}.svg`);
       } catch {
@@ -305,6 +357,33 @@ export default function App() {
     },
     [requestSvg, deliver, baseName],
   );
+
+  const saveNumbersSvg = useCallback(async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setSvgBusy(true);
+    try {
+      // Use current dragged positions if the preview is open, otherwise fetch fresh.
+      const positions = numPositions ?? await requestNumberPositions();
+      const { w, h } = { w: canvas.width, h: canvas.height };
+      const texts = positions.map(({ x, y, area, label }) => {
+        const fs = Math.max(8, Math.min(60, Math.round(Math.sqrt(area) * 0.3)));
+        return `  <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arial,sans-serif"` +
+          ` font-size="${fs}" text-anchor="middle" dominant-baseline="central"` +
+          ` fill="#ffffff">${label}</text>`;
+      });
+      const svg =
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">\n` +
+        texts.join("\n") + `\n</svg>\n`;
+      const blob = new Blob([svg], { type: "image/svg+xml" });
+      await deliver(blob, `${baseName}-numbers.svg`);
+    } catch {
+      setError("Could not create the SVG.");
+    } finally {
+      setSvgBusy(false);
+    }
+  }, [numPositions, requestNumberPositions, deliver, baseName]);
 
   const set = <K extends keyof Params>(key: K) => (e: ChangeEvent<HTMLInputElement>) =>
     setParams((p) => ({ ...p, [key]: Number(e.target.value) }));
@@ -361,20 +440,46 @@ export default function App() {
             <div className="checker">
               <div style={{ position: "relative", display: "flex", maxWidth: "100%" }}>
                 <canvas ref={canvasRef} className="result" />
-                {numbersUrl && (
-                  <img
-                    src={numbersUrl}
-                    alt=""
-                    aria-hidden="true"
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      width: "100%",
-                      height: "100%",
-                      pointerEvents: "none",
-                    }}
-                  />
-                )}
+                {numPositions && (() => {
+                  const canvas = canvasRef.current;
+                  const svgW = canvas?.width ?? 0;
+                  const svgH = canvas?.height ?? 0;
+                  return (
+                    <svg
+                      ref={overlayRef}
+                      viewBox={`0 0 ${svgW} ${svgH}`}
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        cursor: draggingIdx !== null ? "grabbing" : "default",
+                        overflow: "visible",
+                      }}
+                    >
+                      {numPositions.map((pos, i) => {
+                        const fontSize = Math.max(8, Math.min(60, Math.round(Math.sqrt(pos.area) * 0.3)));
+                        return (
+                          <text
+                            key={pos.label}
+                            x={pos.x}
+                            y={pos.y}
+                            fontFamily="Arial,sans-serif"
+                            fontSize={fontSize}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill="#ffffff"
+                            style={{ cursor: "grab", userSelect: "none" }}
+                            onMouseDown={(e) => { e.preventDefault(); setDraggingIdx(i); }}
+                            onTouchStart={(e) => { e.preventDefault(); setDraggingIdx(i); }}
+                          >
+                            {pos.label}
+                          </text>
+                        );
+                      })}
+                    </svg>
+                  );
+                })()}
               </div>
             </div>
             {busy && <div className="spinner" aria-label="Processing" />}
@@ -451,7 +556,7 @@ export default function App() {
                   <button onClick={() => saveSvg("cells")} disabled={!hasResult || busy || svgBusy}>
                     {svgBusy ? "Working…" : "SVG · glass pieces (Cricut)"}
                   </button>
-                  <button onClick={() => saveSvg("cells-numbers")} disabled={!hasResult || busy || svgBusy}>
+                  <button onClick={saveNumbersSvg} disabled={!hasResult || busy || svgBusy}>
                     {svgBusy ? "Working…" : "SVG · numbers layer (Cricut)"}
                   </button>
                 </>
