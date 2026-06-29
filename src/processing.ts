@@ -323,8 +323,10 @@ export function computeMasks(
   const thick = dilateDisk(skeleton, w, h, params.lineWidth);
   const smoothed = gaussianBlur(thick, w, h, params.smoothSigma);
 
+  // The wall must always include the solid dilated line, or a thin line that the
+  // blur pushes below 0.5 would develop gaps and let the flood fill leak.
   const lineBin = new Uint8Array(n);
-  for (let i = 0; i < n; i++) lineBin[i] = smoothed[i] > 0.5 ? 1 : 0;
+  for (let i = 0; i < n; i++) lineBin[i] = smoothed[i] > 0.5 || thick[i] ? 1 : 0;
   const interior = interiorCells(lineBin, w, h);
 
   let lineCore = thick;
@@ -332,7 +334,7 @@ export function computeMasks(
     const effSigma = Math.min(params.smoothSigma, 0.6 * params.lineWidth);
     const sm = gaussianBlur(thick, w, h, effSigma);
     lineCore = new Uint8Array(n);
-    for (let i = 0; i < n; i++) lineCore[i] = sm[i] > 0.5 ? 1 : 0;
+    for (let i = 0; i < n; i++) lineCore[i] = sm[i] > 0.5 || thick[i] ? 1 : 0;
   }
 
   return { w, h, skeleton, interior, lineCore };
@@ -371,7 +373,8 @@ export function process(
       const effSigma = Math.min(params.smoothSigma, 0.6 * params.lineWidth);
       const sm = gaussianBlur(thick, w, h, effSigma);
       core = new Uint8Array(n);
-      for (let i = 0; i < n; i++) core[i] = sm[i] > 0.5 ? 1 : 0;
+      // Union with the solid line so smoothing can never break it into dashes.
+      for (let i = 0; i < n; i++) core[i] = sm[i] > 0.5 || thick[i] ? 1 : 0;
     }
     // Light feather for anti-aliased edges; the solid core keeps full opacity.
     const aa = gaussianBlur(core, w, h, 0.6);
@@ -384,7 +387,7 @@ export function process(
   }
 
   const lineBin = new Uint8Array(n);
-  for (let i = 0; i < n; i++) lineBin[i] = smoothed[i] > 0.5 ? 1 : 0;
+  for (let i = 0; i < n; i++) lineBin[i] = smoothed[i] > 0.5 || thick[i] ? 1 : 0;
 
   const interior = interiorCells(lineBin, w, h);
 
