@@ -167,6 +167,27 @@ export default function App() {
     [decodeAndRun, highRes],
   );
 
+  // Accept a pasted image (⌘V / Ctrl+V) from anywhere on the page.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.kind === "file" && it.type.startsWith("image/")) {
+          const file = it.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void loadFile(file);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [loadFile]);
+
   // Re-decode at the new resolution when the High-res toggle flips.
   const didMountRes = useRef(false);
   useEffect(() => {
@@ -296,7 +317,7 @@ export default function App() {
           <div className="dz-inner">
             <div className="dz-icon">＋</div>
             <strong>Tap to choose a photo</strong>
-            <span>or drag an image here</span>
+            <span>or drag an image here · or paste (⌘V / Ctrl+V)</span>
           </div>
         </label>
       ) : (
