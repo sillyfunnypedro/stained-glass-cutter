@@ -381,9 +381,30 @@ export default function App() {
   const savePng = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
+
+    // If the numbers overlay is on, bake the numbers into the PNG so a single
+    // printed image carries both the drawing and its numbers — sidestepping
+    // Cricut's separate-layer alignment for Print-then-Cut.
+    let exportCanvas: HTMLCanvasElement = canvas;
+    if (showNumbers && numPositions && numPositions.length) {
+      const off = document.createElement("canvas");
+      off.width = canvas.width;
+      off.height = canvas.height;
+      const ctx = off.getContext("2d")!;
+      ctx.drawImage(canvas, 0, 0);
+      ctx.strokeStyle = params.mode === "cells" ? "#ffffff" : "#000000";
+      ctx.lineWidth = Math.max(1, numberSize * 0.12);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (const pos of numPositions) {
+        ctx.stroke(new Path2D(numberSegmentPath(pos.label, pos.x, pos.y, numberSize)));
+      }
+      exportCanvas = off;
+    }
+
+    const blob: Blob | null = await new Promise((res) => exportCanvas.toBlob(res, "image/png"));
     if (blob) await deliver(blob, `${baseName}.png`);
-  }, [deliver, baseName]);
+  }, [deliver, baseName, showNumbers, numPositions, params.mode, numberSize]);
 
   const [svgBusy, setSvgBusy] = useState(false);
   const saveSvg = useCallback(
