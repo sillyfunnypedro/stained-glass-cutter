@@ -274,14 +274,31 @@ export default function App() {
     return () => window.removeEventListener("paste", onPaste);
   }, [loadFile]);
 
-  // Re-decode at the new resolution when the High-res toggle flips.
+  // Re-decode at the new resolution when the High-res toggle flips. The image
+  // dimensions change, so scale any placed number positions (and size) to the
+  // new coordinate space — otherwise they'd stay at their old pixel offsets.
+  const numPositionsRef = useRef(numPositions);
+  numPositionsRef.current = numPositions;
   const didMountRes = useRef(false);
   useEffect(() => {
     if (!didMountRes.current) {
       didMountRes.current = true;
       return;
     }
-    if (fileRef.current) void decodeAndRun(fileRef.current, highRes);
+    const file = fileRef.current;
+    if (!file) return;
+    const old = sourceRef.current;
+    void (async () => {
+      await decodeAndRun(file, highRes);
+      const neu = sourceRef.current;
+      const positions = numPositionsRef.current;
+      if (old && neu && positions && old.width > 0) {
+        const sx = neu.width / old.width;
+        const sy = neu.height / old.height;
+        setNumPositions(positions.map((p) => ({ ...p, x: p.x * sx, y: p.y * sy })));
+        setNumberSize((s) => Math.max(10, Math.min(90, Math.round(s * sx))));
+      }
+    })();
   }, [highRes, decodeAndRun]);
 
   // Compute positions once when the overlay is first turned on, then leave them
